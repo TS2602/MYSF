@@ -615,6 +615,48 @@ const FOOD_DB = [
   {name:"American cheese slice", unit:"slice", cals:70, protein:4.0, fat:5.0, carb:2.0},
   {name:"Swiss cheese slice", unit:"slice", cals:80, protein:6.0, fat:6.0, carb:1.0},
   {name:"Mozzarella cheese slice", unit:"slice", cals:80, protein:6.0, fat:6.0, carb:1.0},
+
+  {name:"Turkey breast, cooked", unit:"oz", cals:47, protein:9.4, fat:0.6, carb:0},
+  {name:"Tuna, canned in water", unit:"oz", cals:33, protein:7.3, fat:0.3, carb:0},
+  {name:"Shrimp, cooked", unit:"oz", cals:28, protein:6.0, fat:0.3, carb:0.2},
+  {name:"Pork tenderloin, cooked", unit:"oz", cals:47, protein:8.3, fat:1.3, carb:0},
+  {name:"Tilapia, cooked", unit:"oz", cals:36, protein:7.4, fat:0.6, carb:0},
+  {name:"Ground turkey 93/7, cooked", unit:"oz", cals:52, protein:7.0, fat:2.5, carb:0},
+  {name:"Beef sirloin steak, cooked", unit:"oz", cals:60, protein:8.5, fat:2.6, carb:0},
+
+  {name:"Quinoa, cooked", unit:"cup", cals:222, protein:8.1, fat:3.6, carb:39.4},
+  {name:"Brown rice, cooked", unit:"cup", cals:216, protein:5.0, fat:1.8, carb:45.0},
+  {name:"Whole wheat bread", unit:"slice", cals:81, protein:4.0, fat:1.1, carb:13.8},
+  {name:"Bagel, plain", unit:"each", cals:245, protein:9.6, fat:1.5, carb:48.0},
+  {name:"Flour tortilla", unit:"each", cals:140, protein:4.0, fat:3.5, carb:24.0},
+  {name:"Corn tortilla", unit:"each", cals:52, protein:1.4, fat:0.6, carb:10.7},
+  {name:"Pasta, cooked", unit:"cup", cals:221, protein:8.1, fat:1.3, carb:43.2},
+  {name:"Potato, baked", unit:"medium", cals:161, protein:4.3, fat:0.2, carb:36.6},
+  {name:"Rice cake", unit:"each", cals:35, protein:0.7, fat:0.3, carb:7.3},
+  {name:"English muffin", unit:"each", cals:134, protein:4.4, fat:1.0, carb:26.2},
+
+  {name:"Butter", unit:"tbsp", cals:102, protein:0.1, fat:11.5, carb:0},
+  {name:"Walnuts", unit:"oz", cals:185, protein:4.3, fat:18.5, carb:3.9},
+  {name:"Cashews", unit:"oz", cals:157, protein:5.2, fat:12.4, carb:8.6},
+  {name:"Chia seeds", unit:"tbsp", cals:58, protein:2.0, fat:3.7, carb:5.1},
+
+  {name:"Protein bar", unit:"bar", cals:200, protein:20.0, fat:7.0, carb:22.0},
+  {name:"String cheese", unit:"stick", cals:80, protein:7.0, fat:6.0, carb:1.0},
+  {name:"Casein protein", unit:"scoop", cals:120, protein:24.0, fat:1.0, carb:3.0},
+  {name:"Ricotta cheese, part-skim", unit:"cup", cals:340, protein:28.0, fat:20.0, carb:13.0},
+
+  {name:"Apple", unit:"medium", cals:95, protein:0.5, fat:0.3, carb:25.0},
+  {name:"Orange", unit:"medium", cals:62, protein:1.2, fat:0.2, carb:15.4},
+  {name:"Strawberries", unit:"cup", cals:49, protein:1.0, fat:0.5, carb:11.7},
+  {name:"Grapes", unit:"cup", cals:104, protein:1.1, fat:0.2, carb:27.3},
+  {name:"Blueberries", unit:"cup", cals:84, protein:1.1, fat:0.5, carb:21.4},
+
+  {name:"Asparagus, steamed", unit:"cup", cals:40, protein:4.3, fat:0.4, carb:7.4},
+  {name:"Cauliflower, steamed", unit:"cup", cals:29, protein:2.3, fat:0.6, carb:5.1},
+  {name:"Green beans, steamed", unit:"cup", cals:44, protein:2.4, fat:0.4, carb:9.9},
+  {name:"Bell pepper, raw", unit:"cup", cals:30, protein:1.0, fat:0.3, carb:7.0},
+  {name:"Carrots, raw", unit:"cup", cals:52, protein:1.2, fat:0.3, carb:12.3},
+  {name:"Zucchini, cooked", unit:"cup", cals:27, protein:2.0, fat:0.2, carb:5.5},
 ];
 
 const ESCAPE_HTML_MAP = {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'};
@@ -824,6 +866,36 @@ async function saveSavedMeals(){
     localStorage.setItem('mysf-saved-meals', JSON.stringify(savedMeals));
     return true;
   }catch(e){ captureStorageError(e); return false; }
+}
+
+let customFoods = [];
+async function loadCustomFoods(){
+  try{
+    const raw = localStorage.getItem('mysf-custom-foods');
+    customFoods = raw ? JSON.parse(raw) : [];
+  }catch(e){ customFoods = []; markKeyCorrupt('mysf-custom-foods', e); }
+}
+async function saveCustomFoods(){
+  if(corruptKeys.has('mysf-custom-foods')){ captureStorageError(new Error('Refusing to overwrite unreadable custom foods')); return false; }
+  try{
+    localStorage.setItem('mysf-custom-foods', JSON.stringify(customFoods));
+    return true;
+  }catch(e){ captureStorageError(e); return false; }
+}
+
+// Barcode lookups are a disposable performance cache, not user-authored data —
+// deliberately NOT wired into the corruptKeys guard or full-backup export, since
+// losing it just means the next scan of that product re-hits the network.
+let barcodeCache = {};
+function loadBarcodeCache(){
+  try{
+    const raw = localStorage.getItem('mysf-barcode-cache');
+    barcodeCache = raw ? JSON.parse(raw) : {};
+  }catch(e){ barcodeCache = {}; }
+}
+function saveBarcodeCache(){
+  try{ localStorage.setItem('mysf-barcode-cache', JSON.stringify(barcodeCache)); }
+  catch(e){ /* non-critical cache — ignore quota/write errors */ }
 }
 function getTodayNutrition(){
   return nutritionLogs.filter(n=>n.date===state.logDate).sort((a,b)=>a.timestamp-b.timestamp);
@@ -1330,7 +1402,8 @@ function exportFullBackup(){
     program: PROGRAM,
     nutritionTarget: NUTRITION_TARGET,
     usdaApiKey: state.usdaApiKey,
-    savedMeals: savedMeals
+    savedMeals: savedMeals,
+    customFoods: customFoods
   };
   const blob = new Blob([JSON.stringify(backup, null, 2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
@@ -1442,7 +1515,7 @@ function renderRestorePreview(){
     : '';
   el.innerHTML = `<div class="restore-summary">
       <div class="restore-summary-title">Backup from ${exportDate}</div>
-      <div class="restore-summary-line">${(d.workoutLog||[]).length} sets &middot; ${(d.nutritionLog||[]).length} meals &middot; ${(d.sessionLog||[]).length} sessions &middot; ${(d.bodyweightLog||[]).length} weigh-ins &middot; ${(d.program||[]).length} program exercises &middot; ${(d.savedMeals||[]).length} saved meals</div>
+      <div class="restore-summary-line">${(d.workoutLog||[]).length} sets &middot; ${(d.nutritionLog||[]).length} meals &middot; ${(d.sessionLog||[]).length} sessions &middot; ${(d.bodyweightLog||[]).length} weigh-ins &middot; ${(d.program||[]).length} program exercises &middot; ${(d.savedMeals||[]).length} saved meals &middot; ${(d.customFoods||[]).length} custom foods</div>
       ${versionWarning}
       <div class="restore-warning">This replaces ALL current data on this device. This can\u2019t be undone.</div>
       <div class="builder-actions" style="margin-top:10px;">
@@ -1467,6 +1540,7 @@ async function performRestore(d){
   sessionLogs = Array.isArray(d.sessionLog) ? d.sessionLog : [];
   bodyweightLogs = Array.isArray(d.bodyweightLog) ? d.bodyweightLog : [];
   savedMeals = Array.isArray(d.savedMeals) ? d.savedMeals : [];
+  customFoods = Array.isArray(d.customFoods) ? d.customFoods : [];
   if(Array.isArray(d.program) && d.program.length) PROGRAM = d.program;
   if(d.nutritionTarget && typeof d.nutritionTarget === 'object') NUTRITION_TARGET = d.nutritionTarget;
   if(typeof d.usdaApiKey === 'string') state.usdaApiKey = d.usdaApiKey;
@@ -1478,6 +1552,7 @@ async function performRestore(d){
   await saveSessions();
   await saveBodyweight();
   await saveSavedMeals();
+  await saveCustomFoods();
   saveProgram();
   saveNutritionTarget();
   await saveApiKey(state.usdaApiKey);
@@ -1971,7 +2046,7 @@ async function searchOpenFoodFacts(query){
   }).filter(p => p.cals > 0 && p.name.trim().length > 0);
 }
 
-async function lookupBarcode(code){
+async function fetchBarcode(code){
   const url = `https://world.openfoodfacts.org/api/v2/product/${encodeURIComponent(code)}.json`;
   const res = await fetch(url);
   if(!res.ok) throw new Error('Lookup failed (' + res.status + ')');
@@ -2003,6 +2078,15 @@ async function lookupBarcode(code){
     serving,
     barcode: code
   };
+}
+async function lookupBarcode(code){
+  if(Object.prototype.hasOwnProperty.call(barcodeCache, code)) return barcodeCache[code];
+  const product = await fetchBarcode(code);
+  if(product){
+    barcodeCache[code] = product;
+    saveBarcodeCache();
+  }
+  return product;
 }
 
 let zxingCodeReader = null;
@@ -2182,6 +2266,7 @@ function customItemFormHTML(){
       <div class="custom-field"><label>Fat (g)</label><input type="number" inputmode="decimal" id="ciFat"></div>
       <div class="custom-field"><label>Carbs (g)</label><input type="number" inputmode="decimal" id="ciCarb"></div>
     </div>
+    <label class="save-meal-toggle"><input type="checkbox" id="saveToMyFoods" checked> Save to My Foods for reuse</label>
     <button class="custom-submit" id="addCustomItemBtn">Add Item</button>
   </div>`;
 }
@@ -2245,6 +2330,49 @@ function getFrequentFoods(){
   });
   return Object.values(freq).sort((a,b)=>b.count-a.count).slice(0,6);
 }
+
+function myFoodRowHTML(f){
+  return `<div class="food-result" data-myfoodname="${esc(f.name)}">
+    <div>
+      <div class="food-result-name">${esc(f.name)}</div>
+      <div class="food-result-macros">per ${esc(f.unit)} &middot; ${f.protein}g P &middot; ${f.fat}g F &middot; ${f.carb}g C</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px;">
+      <div class="food-result-cals">${f.cals}</div>
+      <button class="del-btn ${state.confirmDelete===f.id?'confirm':''}" aria-label="Delete from My Foods" data-delmyfood="${f.id}">
+        ${state.confirmDelete===f.id ? 'DEL?' : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>'}
+      </button>
+    </div>
+  </div>`;
+}
+function attachMyFoodListeners(){
+  document.querySelectorAll('[data-myfoodname]').forEach(row=>{
+    row.addEventListener('click', ()=>{
+      haptic(10);
+      const f = customFoods.find(x=>x.name===row.dataset.myfoodname);
+      if(!f) return;
+      addItemToBuilder({id: uid(), name: f.name, unit: f.unit, qty: 1,
+        baseCals: f.cals, baseProtein: f.protein, baseFat: f.fat, baseCarb: f.carb});
+    });
+  });
+  document.querySelectorAll('[data-delmyfood]').forEach(btn=>{
+    btn.addEventListener('click', async (e)=>{
+      e.stopPropagation();
+      const id = btn.dataset.delmyfood;
+      if(state.confirmDelete === id){
+        haptic(15);
+        customFoods = customFoods.filter(f=>f.id!==id);
+        state.confirmDelete = null;
+        await saveCustomFoods();
+        renderFoodResults();
+      } else {
+        haptic(8);
+        state.confirmDelete = id;
+        renderFoodResults();
+      }
+    });
+  });
+}
 function renderFoodResults(){
   const container = document.getElementById('foodResults');
   if(!container) return;
@@ -2253,8 +2381,12 @@ function renderFoodResults(){
   if(!q){
     const frequent = getFrequentFoods();
     let html = '';
+    if(customFoods.length){
+      html += `<div class="section-label" style="margin:2px 0 8px;">My Foods</div>`;
+      html += customFoods.map(myFoodRowHTML).join('');
+    }
     if(frequent.length){
-      html += `<div class="section-label" style="margin:2px 0 8px;">Frequent</div>`;
+      html += `<div class="section-label" style="margin:10px 0 8px;">Frequent</div>`;
       html += frequent.map(f=>`<div class="food-result" data-freqname="${esc(f.name)}">
         <div>
           <div class="food-result-name">${esc(f.name)}</div>
@@ -2262,8 +2394,8 @@ function renderFoodResults(){
         </div>
         <div class="food-result-cals">${Math.round(f.baseCals)}</div>
       </div>`).join('');
-      html += `<div class="section-label" style="margin:10px 0 8px;">All Foods</div>`;
     }
+    html += `<div class="section-label" style="margin:10px 0 8px;">All Foods</div>`;
     html += FOOD_DB.slice(0,8).map(f=>`<div class="food-result" data-foodname="${esc(f.name)}">
       <div>
         <div class="food-result-name">${esc(f.name)}</div>
@@ -2281,14 +2413,21 @@ function renderFoodResults(){
       });
     });
   } else {
+    const myMatches = customFoods.filter(f=>f.name.toLowerCase().includes(q));
     const matches = FOOD_DB.filter(f=>f.name.toLowerCase().includes(q)).slice(0,8);
-    container.innerHTML = matches.map(f=>`<div class="food-result" data-foodname="${esc(f.name)}">
+    let html = '';
+    if(myMatches.length){
+      html += `<div class="section-label" style="margin:2px 0 8px;">My Foods</div>`;
+      html += myMatches.map(myFoodRowHTML).join('');
+    }
+    html += matches.map(f=>`<div class="food-result" data-foodname="${esc(f.name)}">
       <div>
         <div class="food-result-name">${esc(f.name)}</div>
         <div class="food-result-macros">per ${f.unit} &middot; ${f.protein}g P &middot; ${f.fat}g F &middot; ${f.carb}g C</div>
       </div>
       <div class="food-result-cals">${f.cals}</div>
     </div>`).join('');
+    container.innerHTML = html;
     container.innerHTML += `<div class="db-status" id="dbStatusUSDA">Searching USDA\u2026</div><div class="db-status" id="dbStatusOFF">Searching Open Food Facts\u2026</div>`;
 
     clearTimeout(usdaDebounceTimer);
@@ -2325,6 +2464,7 @@ function renderFoodResults(){
     }, 450);
   }
 
+  attachMyFoodListeners();
   container.querySelectorAll('[data-foodname]').forEach(row=>{
     row.addEventListener('click', ()=>{
       haptic(10);
@@ -2420,15 +2560,25 @@ function renderBuilderPanel(){
     renderBuilderPanel();
   });
   const addBtn = document.getElementById('addCustomItemBtn');
-  if(addBtn) addBtn.addEventListener('click', ()=>{
+  if(addBtn) addBtn.addEventListener('click', async ()=>{
     const name = document.getElementById('ciName').value.trim() || 'Custom item';
     const cals = parseFloat(document.getElementById('ciCals').value) || 0;
     const protein = parseFloat(document.getElementById('ciProtein').value) || 0;
     const fat = parseFloat(document.getElementById('ciFat').value) || 0;
     const carb = parseFloat(document.getElementById('ciCarb').value) || 0;
     const qty = parseFloat(document.getElementById('ciQty').value) || 1;
+    const saveToMyFoods = document.getElementById('saveToMyFoods').checked;
     haptic(10);
     state.builder.items.push({id: uid(), name, unit:'serving', qty, baseCals:cals, baseProtein:protein, baseFat:fat, baseCarb:carb});
+    if(saveToMyFoods){
+      const existing = customFoods.find(f=>f.name.toLowerCase()===name.toLowerCase());
+      if(existing){
+        existing.unit='serving'; existing.cals=cals; existing.protein=protein; existing.fat=fat; existing.carb=carb;
+      } else {
+        customFoods.push({id: uid(), name, unit:'serving', cals, protein, fat, carb, createdAt: Date.now()});
+      }
+      await saveCustomFoods();
+    }
     state.builder.showCustomItem = false;
     renderBuilderPanel();
   });
@@ -2819,7 +2969,8 @@ renderDayTabs();
 renderSkeleton();
 updateClock();
 setInterval(updateClock, 30000);
-Promise.all([loadLogs(), loadNutrition(), loadApiKey(), loadSessions(), loadProgram(), loadNutritionTarget(), loadBodyweight(), loadSavedMeals()]).then(()=>{
+loadBarcodeCache();
+Promise.all([loadLogs(), loadNutrition(), loadApiKey(), loadSessions(), loadProgram(), loadNutritionTarget(), loadBodyweight(), loadSavedMeals(), loadCustomFoods()]).then(()=>{
   state.selectedDay = suggestNextDay();
   updateCorruptWarning();
   render();

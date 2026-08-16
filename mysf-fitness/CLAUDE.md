@@ -8,7 +8,8 @@ Owner is cutting from 280+lb toward a 240lb goal, training a 4-day Upper/Lower s
 ## Architecture — read this before making storage changes
 - **All persistence is `localStorage`, not any cloud/account system.** Each browser/device is fully independent — there is no sync, no login, no server-side database.
 - **This was a deliberate, hard-won decision.** Earlier iterations used Claude.ai's `window.storage` API, which only works inside Claude's own artifact sandbox — it silently fails (or doesn't exist at all) once self-hosted outside Claude, which caused real data loss during development. Never reintroduce `window.storage`.
-- **localStorage keys in use:** `mysf-workout-log`, `mysf-nutrition-log`, `mysf-session-log`, `mysf-bodyweight-log`, `mysf-program`, `mysf-nutrition-target`, `mysf-usda-api-key`, `mysf-onboarded`, `mysf-last-export`, `mysf-saved-meals`. All are per-device only.
+- **localStorage keys in use:** `mysf-workout-log`, `mysf-nutrition-log`, `mysf-session-log`, `mysf-bodyweight-log`, `mysf-program`, `mysf-nutrition-target`, `mysf-usda-api-key`, `mysf-onboarded`, `mysf-last-export`, `mysf-saved-meals`, `mysf-custom-foods`. All are per-device only.
+- **`mysf-barcode-cache` is the one exception to the backup rule below** — it's a disposable performance cache (barcode → last-looked-up product) that Open Food Facts can always regenerate, not user-authored data, so it's deliberately excluded from `exportFullBackup()`/`performRestore()`.
 - **"Full Backup" (Program and Plan tabs) is the only cross-device mechanism** — exports everything as one JSON file, importable via "Restore from Backup File." Any new persisted data type must be added to both `exportFullBackup()` and `performRestore()`, or it silently won't survive a device migration.
 
 ## Food data — two APIs, both keyless for the end user
