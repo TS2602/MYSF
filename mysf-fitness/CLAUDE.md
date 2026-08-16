@@ -1,6 +1,6 @@
 # MYSF Fitness App — Project Context
 
-Personal strength training + nutrition tracking PWA. Single `index.html` file, no build step, no framework, no backend. Built for the owner's personal use and a small circle (training partner), self-hosted on Netlify, deployed from this repo.
+Personal strength training + nutrition tracking PWA. The app itself is a single `index.html` file (no build step, no framework, no backend), alongside two small static PWA support files — `manifest.json` (install metadata, reuses the icons already embedded in `index.html`) and `sw.js` (network-first service worker caching just the app shell for offline load). Built for the owner's personal use and a small circle (training partner), self-hosted on Netlify, deployed from this repo.
 
 ## Who this is for
 Owner is cutting from 280+lb toward a 240lb goal, training a 4-day Upper/Lower split (twice-weekly muscle group frequency). Nutrition targets are set accordingly (~2,400-2,500 cal, high protein) but are now user-editable per device, not hardcoded to one person's numbers — anyone using their own copy of the app sets their own targets in Plan.
