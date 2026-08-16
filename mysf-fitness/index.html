@@ -2004,6 +2004,7 @@ async function searchUSDA(query){
       };
     }
     return {
+      fdcId: f.fdcId,
       name: f.description,
       unit: '100g',
       cals: Math.round(get(f.foodNutrients, NUTRIENT_IDS.cals)),
@@ -2013,6 +2014,42 @@ async function searchUSDA(query){
       serving
     };
   }).filter(f => f.cals > 0);
+}
+
+// USDA's /foods/search endpoint never includes household-measure portions,
+// even for foods that have them (confirmed against the live API) — that data
+// only comes back from the /food/{fdcId} details endpoint. So rather than
+// fetching details for every search result (slow, wasteful), this is called
+// lazily, only when the user actually taps a result that lacked a serving
+// from search, to try to upgrade it from a 100g default to a real portion.
+let usdaPortionCache = {};
+function pickBestUsdaPortion(foodPortions){
+  if(!Array.isArray(foodPortions) || !foodPortions.length) return null;
+  const candidates = foodPortions
+    .filter(p => p.gramWeight > 0)
+    .map(p => {
+      const hasDescription = p.portionDescription && p.portionDescription.toLowerCase() !== 'quantity not specified';
+      const label = hasDescription ? p.portionDescription : (p.amount && p.modifier ? `${p.amount} ${p.modifier}` : null);
+      return label ? {label, gramWeight: p.gramWeight, sequenceNumber: p.sequenceNumber || 999} : null;
+    })
+    .filter(Boolean)
+    .sort((a,b)=>a.sequenceNumber-b.sequenceNumber);
+  return candidates[0] || null;
+}
+async function fetchUsdaPortion(fdcId){
+  if(Object.prototype.hasOwnProperty.call(usdaPortionCache, fdcId)) return usdaPortionCache[fdcId];
+  const key = state.usdaApiKey || 'MQIEcFSlOg7QwgVedyWRkzZPpyfYPOiUcdZTZZ3C';
+  const url = `https://api.nal.usda.gov/fdc/v1/food/${fdcId}?api_key=${encodeURIComponent(key)}`;
+  let portion = null;
+  try{
+    const res = await fetch(url);
+    if(res.ok){
+      const data = await res.json();
+      portion = pickBestUsdaPortion(data.foodPortions);
+    }
+  }catch(e){ /* network hiccup — caller falls back to the 100g default */ }
+  usdaPortionCache[fdcId] = portion;
+  return portion;
 }
 
 async function searchOpenFoodFacts(query){
@@ -2500,7 +2537,7 @@ function renderDbSection(statusId, label, results, hadLocalMatches){
       </div>`;
     }).join('');
   document.querySelectorAll(`[data-dbsrc="${statusId}"]`).forEach(row=>{
-    row.addEventListener('click', ()=>{
+    row.addEventListener('click', async ()=>{
       haptic(10);
       const src = dbResultsCache[row.dataset.dbsrc];
       const f = src ? src[parseInt(row.dataset.dbidx)] : null;
@@ -2512,15 +2549,35 @@ function renderDbSection(statusId, label, results, hadLocalMatches){
           baseCals: f.serving.cals, baseProtein: f.serving.protein,
           baseFat: f.serving.fat, baseCarb: f.serving.carb
         });
-      } else {
-        // No serving data available \u2014 fall back to per-gram so the
-        // quantity field holds an actual gram weight.
-        addItemToBuilder({
-          id: uid(), name: f.name, unit: 'g', qty: 100,
-          baseCals: f.cals/100, baseProtein: f.protein/100,
-          baseFat: f.fat/100, baseCarb: f.carb/100
-        });
+        return;
       }
+      if(f.fdcId){
+        // No serving in the search result, but USDA's details endpoint often
+        // has real household-measure portions (e.g. "1 banana", "4 oz") that
+        // the search endpoint never returns \u2014 worth one extra lookup before
+        // falling back to a bare 100g default.
+        const calsEl = row.querySelector('.food-result-cals');
+        const originalCals = calsEl ? calsEl.textContent : null;
+        if(calsEl) calsEl.textContent = '\u2026';
+        const portion = await fetchUsdaPortion(f.fdcId);
+        if(calsEl && originalCals !== null) calsEl.textContent = originalCals;
+        if(portion){
+          const scale = portion.gramWeight / 100;
+          addItemToBuilder({
+            id: uid(), name: f.name, unit: portion.label, qty: 1,
+            baseCals: Math.round(f.cals * scale), baseProtein: Math.round(f.protein * scale * 10) / 10,
+            baseFat: Math.round(f.fat * scale * 10) / 10, baseCarb: Math.round(f.carb * scale * 10) / 10
+          });
+          return;
+        }
+      }
+      // No serving data available anywhere \u2014 fall back to per-gram so the
+      // quantity field holds an actual gram weight.
+      addItemToBuilder({
+        id: uid(), name: f.name, unit: 'g', qty: 100,
+        baseCals: f.cals/100, baseProtein: f.protein/100,
+        baseFat: f.fat/100, baseCarb: f.carb/100
+      });
     });
   });
 }
