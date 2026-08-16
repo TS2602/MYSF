@@ -332,6 +332,8 @@ main{flex:1;padding:0 18px;}
 .custom-row .custom-field{flex:1;}
 .custom-submit{width:100%;background:linear-gradient(135deg, #6B9DC8 0%, var(--accent) 55%, var(--accent-dim) 100%);color:#fff;border:none;border-radius:10px;padding:12px;font-family:'Oswald',sans-serif;font-weight:600;font-size:13px;cursor:pointer;margin-top:2px;box-shadow:0 4px 14px rgba(91,141,184,0.3), 0 1px 0 rgba(255,255,255,0.15) inset;transition:transform .25s var(--ease), box-shadow .25s var(--ease);}
 .custom-submit:active{transform:scale(0.97);}
+.save-meal-toggle{display:flex;align-items:center;gap:8px;font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-dim);margin:-2px 0 14px;cursor:pointer;}
+.save-meal-toggle input{width:16px;height:16px;accent-color:var(--accent);flex-shrink:0;cursor:pointer;}
 
 .meal-log-row{display:flex;justify-content:space-between;align-items:center;padding:11px 0;border-bottom:1px solid var(--border);}
 .meal-log-row:last-child{border-bottom:none;}
@@ -647,7 +649,7 @@ let state = {
   exportFormat: 'csv',
   fuelExportFormat: 'csv',
   showCustomForm: false,
-  builder: { open:false, search:'', name:'', items:[], showCustomItem:false },
+  builder: { open:false, search:'', name:'', items:[], showCustomItem:false, saveAsMeal:false },
   exerciseBrowser: { open:false, day:null, muscle:'all', search:'', showCustom:false },
   pendingRestore: null,
   editingSetId: null,
@@ -809,6 +811,20 @@ async function saveNutrition(){
     return true;
   }catch(e){ captureStorageError(e); return false; }
 }
+let savedMeals = [];
+async function loadSavedMeals(){
+  try{
+    const raw = localStorage.getItem('mysf-saved-meals');
+    savedMeals = raw ? JSON.parse(raw) : [];
+  }catch(e){ savedMeals = []; markKeyCorrupt('mysf-saved-meals', e); }
+}
+async function saveSavedMeals(){
+  if(corruptKeys.has('mysf-saved-meals')){ captureStorageError(new Error('Refusing to overwrite unreadable saved meals')); return false; }
+  try{
+    localStorage.setItem('mysf-saved-meals', JSON.stringify(savedMeals));
+    return true;
+  }catch(e){ captureStorageError(e); return false; }
+}
 function getTodayNutrition(){
   return nutritionLogs.filter(n=>n.date===state.logDate).sort((a,b)=>a.timestamp-b.timestamp);
 }
@@ -868,6 +884,14 @@ function getLastSeed(exercise){
   const entries = logs.filter(l=>l.exercise===exercise).sort((a,b)=>b.timestamp-a.timestamp);
   if(!entries.length) return null;
   return {weight: entries[0].weight, reps: entries[0].reps};
+}
+function getLastPerformance(exercise, day){
+  const past = logs.filter(l => l.exercise===exercise && l.day===day && l.date < state.logDate);
+  if(!past.length) return null;
+  let lastDate = past[0].date;
+  for(const l of past) if(l.date > lastDate) lastDate = l.date;
+  const sets = past.filter(l => l.date===lastDate).sort((a,b)=>a.setNum-b.setNum);
+  return { date: lastDate, sets };
 }
 function suggestNextDay(){
   if(!logs.length) return DAYS[0];
@@ -1042,11 +1066,15 @@ function renderToday(){
     const doneLogs = getExLogs(ex.name, ex.day, dateStr);
     const pr = getPR(ex.name);
     const isOpen = !!state.expanded[ex.name];
+    const last = getLastPerformance(ex.name, ex.day);
+    const metaText = last
+      ? 'last ' + fmtDateHeader(last.date) + ': ' + last.sets.map(s=>s.weight+'&times;'+s.reps).join(', ')
+      : 'baseline ' + esc(ex.baseline);
     html += `<div class="ex-card">
       <div class="ex-head" data-toggle="${esc(ex.name)}">
         <div>
           <div class="ex-name">${esc(ex.name)}</div>
-          <div class="ex-meta">${esc(ex.target)} &middot; baseline ${esc(ex.baseline)}</div>
+          <div class="ex-meta">${esc(ex.target)} &middot; ${metaText}</div>
         </div>
         <div class="ex-right">
           ${pr ? `<span class="pr-badge">PR ${pr}</span>` : ''}
@@ -1301,7 +1329,8 @@ function exportFullBackup(){
     bodyweightLog: bodyweightLogs,
     program: PROGRAM,
     nutritionTarget: NUTRITION_TARGET,
-    usdaApiKey: state.usdaApiKey
+    usdaApiKey: state.usdaApiKey,
+    savedMeals: savedMeals
   };
   const blob = new Blob([JSON.stringify(backup, null, 2)], {type:'application/json'});
   const url = URL.createObjectURL(blob);
@@ -1413,7 +1442,7 @@ function renderRestorePreview(){
     : '';
   el.innerHTML = `<div class="restore-summary">
       <div class="restore-summary-title">Backup from ${exportDate}</div>
-      <div class="restore-summary-line">${(d.workoutLog||[]).length} sets &middot; ${(d.nutritionLog||[]).length} meals &middot; ${(d.sessionLog||[]).length} sessions &middot; ${(d.bodyweightLog||[]).length} weigh-ins &middot; ${(d.program||[]).length} program exercises</div>
+      <div class="restore-summary-line">${(d.workoutLog||[]).length} sets &middot; ${(d.nutritionLog||[]).length} meals &middot; ${(d.sessionLog||[]).length} sessions &middot; ${(d.bodyweightLog||[]).length} weigh-ins &middot; ${(d.program||[]).length} program exercises &middot; ${(d.savedMeals||[]).length} saved meals</div>
       ${versionWarning}
       <div class="restore-warning">This replaces ALL current data on this device. This can\u2019t be undone.</div>
       <div class="builder-actions" style="margin-top:10px;">
@@ -1437,6 +1466,7 @@ async function performRestore(d){
   nutritionLogs = Array.isArray(d.nutritionLog) ? d.nutritionLog : [];
   sessionLogs = Array.isArray(d.sessionLog) ? d.sessionLog : [];
   bodyweightLogs = Array.isArray(d.bodyweightLog) ? d.bodyweightLog : [];
+  savedMeals = Array.isArray(d.savedMeals) ? d.savedMeals : [];
   if(Array.isArray(d.program) && d.program.length) PROGRAM = d.program;
   if(d.nutritionTarget && typeof d.nutritionTarget === 'object') NUTRITION_TARGET = d.nutritionTarget;
   if(typeof d.usdaApiKey === 'string') state.usdaApiKey = d.usdaApiKey;
@@ -1447,6 +1477,7 @@ async function performRestore(d){
   await saveNutrition();
   await saveSessions();
   await saveBodyweight();
+  await saveSavedMeals();
   saveProgram();
   saveNutritionTarget();
   await saveApiKey(state.usdaApiKey);
@@ -2360,6 +2391,7 @@ function renderBuilderPanel(){
   const total = computeBuilderTotal();
   container.innerHTML = `
     <div class="custom-field"><label>Meal name (optional)</label><input type="text" id="builderName" placeholder="e.g. Breakfast" value="${esc(state.builder.name)}"></div>
+    <label class="save-meal-toggle"><input type="checkbox" id="saveAsMealToggle" ${state.builder.saveAsMeal ? 'checked' : ''}> Save as a reusable meal for next time</label>
     <div class="custom-field"><label>Search foods</label><input type="text" id="foodSearch" placeholder="egg, chicken, rice..." value="${esc(state.builder.search)}"></div>
     <button class="scan-btn" id="openScannerBtn"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="display:inline;"><path d="M3 7V5a2 2 0 0 1 2-2h2"/><path d="M17 3h2a2 2 0 0 1 2 2v2"/><path d="M21 17v2a2 2 0 0 1-2 2h-2"/><path d="M7 21H5a2 2 0 0 1-2-2v-2"/><line x1="7" y1="12" x2="17" y2="12"/></svg>Scan Barcode</button>
     <div class="food-search-results" id="foodResults"></div>
@@ -2378,6 +2410,7 @@ function renderBuilderPanel(){
   renderFoodResults();
 
   document.getElementById('builderName').addEventListener('input', (e)=>{ state.builder.name = e.target.value; });
+  document.getElementById('saveAsMealToggle').addEventListener('change', (e)=>{ state.builder.saveAsMeal = e.target.checked; });
   document.getElementById('foodSearch').addEventListener('input', (e)=>{ state.builder.search = e.target.value; renderFoodResults(); });
   document.getElementById('openScannerBtn').addEventListener('click', ()=>{ haptic(10); openScanner(); });
 
@@ -2407,10 +2440,10 @@ function renderBuilderPanel(){
 
   document.getElementById('builderCancel').addEventListener('click', ()=>{
     haptic(8);
-    state.builder = { open:true, search:'', name:'', items:[], showCustomItem:false };
+    state.builder = { open:true, search:'', name:'', items:[], showCustomItem:false, saveAsMeal:false };
     renderBuilderPanel();
   });
-  document.getElementById('builderLog').addEventListener('click', ()=>{
+  document.getElementById('builderLog').addEventListener('click', async ()=>{
     if(!state.builder.items.length){
       showToast('Add at least one item first');
       return;
@@ -2422,7 +2455,15 @@ function renderBuilderPanel(){
       name, cals: total.cals, protein: total.protein, fat: total.fat, carb: total.carb,
       items: state.builder.items.map(i=>{ const m = computeItemMacros(i); return {name:i.name, qty:i.qty, unit:i.unit, ...m}; })
     };
-    state.builder = { open:false, search:'', name:'', items:[], showCustomItem:false };
+    if(state.builder.saveAsMeal){
+      savedMeals.push({
+        id: uid(), name, createdAt: Date.now(),
+        cals: total.cals, protein: total.protein, fat: total.fat, carb: total.carb,
+        items: state.builder.items.map(i=>({name:i.name, unit:i.unit, qty:i.qty, baseCals:i.baseCals, baseProtein:i.baseProtein, baseFat:i.baseFat, baseCarb:i.baseCarb}))
+      });
+      await saveSavedMeals();
+    }
+    state.builder = { open:false, search:'', name:'', items:[], showCustomItem:false, saveAsMeal:false };
     logNutritionEntry(entry);
   });
 }
@@ -2436,12 +2477,39 @@ async function logNutritionEntry(entry){
   render();
 }
 
+async function logSavedMeal(meal){
+  const entry = {
+    id: uid(), date: state.logDate, timestamp: Date.now(),
+    name: meal.name, cals: meal.cals, protein: meal.protein, fat: meal.fat, carb: meal.carb,
+    items: meal.items.map(i=>{ const m = computeItemMacros(i); return {name:i.name, qty:i.qty, unit:i.unit, ...m}; })
+  };
+  await logNutritionEntry(entry);
+}
+
 function renderFuelToday(){
   const todays = getTodayNutrition();
   const totals = sumMacros(todays);
   let html = logDateBarHTML();
   html += bodyweightCardHTML();
   html += macroSummaryHTML(totals);
+
+  if(savedMeals.length){
+    html += `<div class="section-label">Saved Meals</div>`;
+    savedMeals.forEach(m=>{
+      html += `<div class="meal-chip" data-logsaved="${m.id}">
+        <div>
+          <div class="meal-chip-name">${esc(m.name)}</div>
+          <div class="meal-chip-macros">${m.protein.toFixed(1)}g P &middot; ${m.fat.toFixed(1)}g F &middot; ${m.carb.toFixed(1)}g C</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:8px;">
+          <div class="meal-chip-cals">${m.cals} cal</div>
+          <button class="del-btn ${state.confirmDelete===m.id?'confirm':''}" aria-label="Delete saved meal" data-delsaved="${m.id}">
+            ${state.confirmDelete===m.id ? 'DEL?' : '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>'}
+          </button>
+        </div>
+      </div>`;
+    });
+  }
 
   html += `<div class="section-label">Build a Meal</div>`;
   html += `<div class="builder-panel" id="builderPanel"></div>`;
@@ -2480,6 +2548,31 @@ function renderFuelToday(){
       nutritionLogs = nutritionLogs.filter(n=>n.id!==btn.dataset.delmeal);
       await saveNutrition();
       render();
+    });
+  });
+
+  document.querySelectorAll('[data-logsaved]').forEach(chip=>{
+    chip.addEventListener('click', ()=>{
+      haptic(10);
+      const meal = savedMeals.find(m=>m.id===chip.dataset.logsaved);
+      if(meal) logSavedMeal(meal);
+    });
+  });
+  document.querySelectorAll('[data-delsaved]').forEach(btn=>{
+    btn.addEventListener('click', async (e)=>{
+      e.stopPropagation();
+      const id = btn.dataset.delsaved;
+      if(state.confirmDelete === id){
+        haptic(15);
+        savedMeals = savedMeals.filter(m=>m.id!==id);
+        state.confirmDelete = null;
+        await saveSavedMeals();
+        render();
+      } else {
+        haptic(8);
+        state.confirmDelete = id;
+        render();
+      }
     });
   });
 }
@@ -2701,7 +2794,7 @@ document.querySelectorAll('.mode-btn').forEach(b=>{
     state.view = 'today';
     state.confirmDelete = null;
     state.showCustomForm = false;
-    state.builder = { open:false, search:'', name:'', items:[], showCustomItem:false };
+    state.builder = { open:false, search:'', name:'', items:[], showCustomItem:false, saveAsMeal:false };
     render();
   });
 });
@@ -2726,7 +2819,7 @@ renderDayTabs();
 renderSkeleton();
 updateClock();
 setInterval(updateClock, 30000);
-Promise.all([loadLogs(), loadNutrition(), loadApiKey(), loadSessions(), loadProgram(), loadNutritionTarget(), loadBodyweight()]).then(()=>{
+Promise.all([loadLogs(), loadNutrition(), loadApiKey(), loadSessions(), loadProgram(), loadNutritionTarget(), loadBodyweight(), loadSavedMeals()]).then(()=>{
   state.selectedDay = suggestNextDay();
   updateCorruptWarning();
   render();
