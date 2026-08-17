@@ -44,8 +44,8 @@
 }
 *{box-sizing:border-box; -webkit-tap-highlight-color:transparent;}
 button:focus-visible, input:focus-visible, [tabindex]:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:4px;}
-.ex-search-input, .bw-input-row input, .custom-field input, .logdate-bar input[type="date"], .builder-item-qty{transition:border-color .2s var(--ease), box-shadow .2s var(--ease);}
-.ex-search-input:focus, .bw-input-row input:focus, .custom-field input:focus, .logdate-bar input[type="date"]:focus, .builder-item-qty:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(91,141,184,0.18);}
+.ex-search-input, .custom-field input, .logdate-bar input[type="date"], .builder-item-qty{transition:border-color .2s var(--ease), box-shadow .2s var(--ease);}
+.ex-search-input:focus, .custom-field input:focus, .logdate-bar input[type="date"]:focus, .builder-item-qty:focus{outline:none;border-color:var(--accent);box-shadow:0 0 0 3px rgba(91,141,184,0.18);}
 html,body{margin:0;padding:0;background-color:#1C1D21;background-image:url("data:image/svg+xml,%3Csvg%20xmlns%3D%22http%3A%2F%2Fwww.w3.org%2F2000%2Fsvg%22%3E%3Cfilter%20id%3D%22n%22%3E%3CfeTurbulence%20type%3D%22fractalNoise%22%20baseFrequency%3D%220.85%22%20numOctaves%3D%222%22%20stitchTiles%3D%22stitch%22%2F%3E%3CfeColorMatrix%20type%3D%22matrix%22%20values%3D%220%200%200%200%200%20%200%200%200%200%200%20%200%200%200%200%200%20%200%200%200%200.05%200%22%2F%3E%3C%2Ffilter%3E%3Crect%20width%3D%22100%25%22%20height%3D%22100%25%22%20filter%3D%22url%28%23n%29%22%2F%3E%3C%2Fsvg%3E"), radial-gradient(ellipse 120% 60% at 50% -10%, #2A2D33 0%, #1C1D21 55%);background-blend-mode:overlay, normal;background-attachment:fixed;color:var(--text);font-family:'Inter',system-ui,sans-serif;overscroll-behavior-y:contain;}
 #app{max-width:480px;margin:0 auto;min-height:100vh;display:flex;flex-direction:column;position:relative;padding-bottom:76px;}
 
@@ -294,8 +294,8 @@ main{flex:1;padding:0 18px;}
 .bw-row{display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;}
 .bw-label{font-family:'Oswald',sans-serif;font-weight:600;font-size:13px;letter-spacing:.3px;}
 .bw-trend{font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:700;}
-.bw-input-row{display:flex;gap:8px;align-items:center;}
-.bw-input-row input{flex:1;background:var(--surface-alt);border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--text);font-family:'JetBrains Mono',monospace;font-size:16px;box-sizing:border-box;}
+.bw-fatmass{font-family:'JetBrains Mono',monospace;font-size:11px;color:var(--text-dim);margin:-2px 0 12px;}
+.bw-fatmass b{color:var(--text);font-weight:700;}
 
 .macro-summary{background:var(--card-bg);border:1px solid var(--border);border-top:1px solid var(--card-edge);border-radius:var(--radius);padding:18px 16px;margin-bottom:16px;box-shadow:var(--card-shadow);}
 .donut-wrap{display:flex;align-items:center;gap:20px;}
@@ -804,32 +804,33 @@ async function saveBodyweight(){
 function getLogDateBodyweight(){
   return bodyweightLogs.find(b=>b.date===state.logDate);
 }
-async function logBodyweight(weight){
+async function logBodyweight(weight, bodyFatPct){
   const existing = getLogDateBodyweight();
   if(existing){
     existing.weight = weight;
     existing.timestamp = Date.now();
+    if(bodyFatPct != null) existing.bodyFatPct = bodyFatPct;
+    else delete existing.bodyFatPct;
   } else {
-    bodyweightLogs.push({
+    const entry = {
       id: Date.now()+'-'+Math.random().toString(36).slice(2,7),
       date: state.logDate, timestamp: Date.now(), weight
-    });
+    };
+    if(bodyFatPct != null) entry.bodyFatPct = bodyFatPct;
+    bodyweightLogs.push(entry);
   }
   const saved = await saveBodyweight();
   haptic(15);
   if(!saved) showToast('\u26a0 Save failed: ' + lastStorageError);
-  else showToast('Weight logged \u2014 ' + weight + ' lb');
+  else showToast('Weight logged \u2014 ' + weight + ' lb' + (bodyFatPct != null ? ', ' + bodyFatPct + '% BF' : ''));
   render();
 }
-function getBodyweightTrend(){
-  return [...bodyweightLogs].sort((a,b)=> a.date < b.date ? -1 : 1).slice(-10);
-}
-function getWeeklyWeightChange(){
-  const sorted = [...bodyweightLogs].sort((a,b)=> a.date < b.date ? -1 : 1);
+// Finds the entry closest to 7 days before the most recent entry in `sorted`
+// (ascending by date) and returns the change in `key` between them.
+function computeWeeklyChange(sorted, key){
   if(sorted.length < 2) return null;
   const latest = sorted[sorted.length-1];
   const latestDate = new Date(latest.date+'T00:00:00');
-  // find the entry closest to 7 days before the latest entry
   let closest = null, closestDiff = Infinity;
   for(const b of sorted.slice(0, -1)){
     const d = new Date(b.date+'T00:00:00');
@@ -838,7 +839,38 @@ function getWeeklyWeightChange(){
     if(diff < closestDiff){ closestDiff = diff; closest = b; }
   }
   if(!closest) return null;
-  return { change: Math.round((latest.weight - closest.weight)*10)/10, days: Math.round((latestDate - new Date(closest.date+'T00:00:00'))/86400000) };
+  return { change: Math.round((latest[key] - closest[key])*10)/10, days: Math.round((latestDate - new Date(closest.date+'T00:00:00'))/86400000) };
+}
+function getBodyweightTrend(){
+  return [...bodyweightLogs].sort((a,b)=> a.date < b.date ? -1 : 1).slice(-10);
+}
+function getWeeklyWeightChange(){
+  const sorted = [...bodyweightLogs].sort((a,b)=> a.date < b.date ? -1 : 1);
+  return computeWeeklyChange(sorted, 'weight');
+}
+function getBodyFatSorted(){
+  return bodyweightLogs.filter(b=>b.bodyFatPct!=null).sort((a,b)=> a.date < b.date ? -1 : 1);
+}
+function getBodyFatTrend(){
+  return getBodyFatSorted().slice(-10);
+}
+function getWeeklyBodyFatChange(){
+  return computeWeeklyChange(getBodyFatSorted(), 'bodyFatPct');
+}
+// Fat mass isn't stored directly \u2014 it's derived from weight \u00d7 body fat %
+// on any day both were logged together, so there's no separate field that
+// could drift out of sync with the two numbers it comes from.
+function getFatMassSorted(){
+  return bodyweightLogs
+    .filter(b=>b.weight!=null && b.bodyFatPct!=null)
+    .map(b=>({date:b.date, timestamp:b.timestamp, fatMass: Math.round(b.weight * b.bodyFatPct/100 * 10)/10}))
+    .sort((a,b)=> a.date < b.date ? -1 : 1);
+}
+function getFatMassTrend(){
+  return getFatMassSorted().slice(-10);
+}
+function getWeeklyFatMassChange(){
+  return computeWeeklyChange(getFatMassSorted(), 'fatMass');
 }
 async function loadNutrition(){
   try{
@@ -1908,6 +1940,12 @@ function renderTrends(){
   document.getElementById('mainView').innerHTML = html || `<div class="empty-state"><div class="big">No data yet</div>Log a few sessions to see trends here.</div>`;
 }
 
+function computeFatMassLine(weight, bodyFatPct){
+  if(weight == null || isNaN(weight) || bodyFatPct == null || isNaN(bodyFatPct)) return '';
+  const fatMass = Math.round(weight * bodyFatPct / 100 * 10) / 10;
+  const leanMass = Math.round((weight - fatMass) * 10) / 10;
+  return `Fat mass <b>${fatMass} lb</b> &middot; Lean mass <b>${leanMass} lb</b>`;
+}
 function bodyweightCardHTML(){
   const entry = getLogDateBodyweight();
   const trend = getWeeklyWeightChange();
@@ -1917,15 +1955,18 @@ function bodyweightCardHTML(){
     const color = trend.change < 0 ? 'var(--macro-carb)' : (trend.change > 0 ? 'var(--danger-text)' : 'var(--text-dim)');
     trendLine = `<div class="bw-trend" style="color:${color};">${sign}${trend.change} lb over ${trend.days} days</div>`;
   }
+  const initialFatMassLine = entry ? computeFatMassLine(entry.weight, entry.bodyFatPct) : '';
   return `<div class="bw-card">
     <div class="bw-row">
       <div class="bw-label">Bodyweight</div>
       ${trendLine}
     </div>
-    <div class="bw-input-row">
-      <input type="number" inputmode="decimal" id="bwInput" placeholder="lb" value="${entry ? entry.weight : ''}">
-      <button class="custom-submit" id="bwLogBtn" style="width:auto;flex-shrink:0;padding:10px 18px;margin-top:0;">${entry ? 'Update' : 'Log'}</button>
+    <div class="custom-row">
+      <div class="custom-field"><label>Weight (lb)</label><input type="number" inputmode="decimal" id="bwInput" placeholder="lb" value="${entry && entry.weight!=null ? entry.weight : ''}"></div>
+      <div class="custom-field"><label>Body Fat % (optional)</label><input type="number" inputmode="decimal" id="bwBodyFatInput" placeholder="%" value="${entry && entry.bodyFatPct!=null ? entry.bodyFatPct : ''}"></div>
     </div>
+    <div class="bw-fatmass" id="bwFatMassLine" style="display:${initialFatMassLine ? 'block' : 'none'};">${initialFatMassLine}</div>
+    <button class="custom-submit" id="bwLogBtn" style="margin-top:2px;">${entry ? 'Update' : 'Log'}</button>
   </div>`;
 }
 
@@ -2746,8 +2787,25 @@ function renderFuelToday(){
   if(bwBtn) bwBtn.addEventListener('click', ()=>{
     const val = parseFloat(document.getElementById('bwInput').value);
     if(isNaN(val) || val <= 0){ showToast('Enter a valid weight'); return; }
-    logBodyweight(Math.round(val*10)/10);
+    const bfRaw = document.getElementById('bwBodyFatInput').value;
+    const bf = bfRaw.trim() === '' ? null : parseFloat(bfRaw);
+    if(bf != null && (isNaN(bf) || bf < 0 || bf > 100)){ showToast('Body fat % should be between 0 and 100'); return; }
+    logBodyweight(Math.round(val*10)/10, bf != null ? Math.round(bf*10)/10 : null);
   });
+  const bwWeightInput = document.getElementById('bwInput');
+  const bwBodyFatInput = document.getElementById('bwBodyFatInput');
+  const bwFatMassLine = document.getElementById('bwFatMassLine');
+  if(bwWeightInput && bwBodyFatInput && bwFatMassLine){
+    const updateFatMassPreview = ()=>{
+      const w = parseFloat(bwWeightInput.value);
+      const bf = parseFloat(bwBodyFatInput.value);
+      const line = computeFatMassLine(isNaN(w) ? null : w, isNaN(bf) ? null : bf);
+      bwFatMassLine.innerHTML = line;
+      bwFatMassLine.style.display = line ? 'block' : 'none';
+    };
+    bwWeightInput.addEventListener('input', updateFatMassPreview);
+    bwBodyFatInput.addEventListener('input', updateFatMassPreview);
+  }
 
   document.querySelectorAll('[data-delmeal]').forEach(btn=>{
     btn.addEventListener('click', async ()=>{
@@ -2853,6 +2911,30 @@ function renderFuelHistory(){
   document.getElementById('fuelExportBtn').addEventListener('click', runFuelExport);
 }
 
+// Shared renderer for a trend-card with a stat pair + sparkline, reused
+// across bodyweight, body fat %, and fat mass \u2014 all three are shaped the
+// same way (date-sorted entries, a current value, a 7-day change).
+function sparkTrendCardHTML(name, entries, valueKey, unit, weeklyChange, barColor){
+  const vals = entries.map(e=>e[valueKey]);
+  const maxV = Math.max(...vals);
+  const minV = Math.min(...vals);
+  const range = Math.max(0.0001, maxV - minV);
+  const current = entries[entries.length-1][valueKey];
+  return `<div class="trend-card">
+    <div class="trend-name">${name}</div>
+    <div class="trend-stats">
+      <div><div class="trend-stat-label">Current</div><div class="trend-stat-val">${current}${unit}</div></div>
+      <div><div class="trend-stat-label">7-Day Change</div><div class="trend-stat-val" style="color:${weeklyChange && weeklyChange.change < 0 ? 'var(--macro-carb)' : 'var(--text)'};">${weeklyChange ? (weeklyChange.change > 0 ? '+' : '') + weeklyChange.change + unit : '\u2014'}</div></div>
+    </div>
+    <div class="spark-row">
+      ${entries.map(e=>`<div class="spark-bar-wrap">
+        <div class="spark-bar" style="height:${Math.max(8, Math.round(((e[valueKey]-minV)/range)*100))}%; background:${barColor};"></div>
+        <div class="spark-label">${shortDate(e.date)}</div>
+      </div>`).join('')}
+    </div>
+  </div>`;
+}
+
 function renderFuelTrends(){
   if(!nutritionLogs.length && !bodyweightLogs.length){
     document.getElementById('mainView').innerHTML = `<div class="empty-state"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="3 17 9 11 13 15 21 7"/><polyline points="14 7 21 7 21 14"/></svg><div class="big">No data yet</div>Log a few days of meals or weigh-ins to see trends here.</div>`;
@@ -2861,24 +2943,15 @@ function renderFuelTrends(){
   let html = '';
 
   if(bodyweightLogs.length){
-    const bwTrend = getBodyweightTrend();
-    const weeklyChange = getWeeklyWeightChange();
-    const maxW = Math.max(...bwTrend.map(b=>b.weight));
-    const minW = Math.min(...bwTrend.map(b=>b.weight));
-    const range = Math.max(1, maxW - minW);
-    html += `<div class="trend-card">
-      <div class="trend-name">Bodyweight</div>
-      <div class="trend-stats">
-        <div><div class="trend-stat-label">Current</div><div class="trend-stat-val">${bwTrend[bwTrend.length-1].weight} lb</div></div>
-        <div><div class="trend-stat-label">7-Day Change</div><div class="trend-stat-val" style="color:${weeklyChange && weeklyChange.change < 0 ? 'var(--macro-carb)' : 'var(--text)'};">${weeklyChange ? (weeklyChange.change > 0 ? '+' : '') + weeklyChange.change + ' lb' : '\u2014'}</div></div>
-      </div>
-      <div class="spark-row">
-        ${bwTrend.map(b=>`<div class="spark-bar-wrap">
-          <div class="spark-bar" style="height:${Math.max(8, Math.round(((b.weight-minW)/range)*100))}%; background:var(--macro-carb);"></div>
-          <div class="spark-label">${shortDate(b.date)}</div>
-        </div>`).join('')}
-      </div>
-    </div>`;
+    html += sparkTrendCardHTML('Bodyweight', getBodyweightTrend(), 'weight', ' lb', getWeeklyWeightChange(), 'var(--macro-carb)');
+  }
+  const bfTrend = getBodyFatTrend();
+  if(bfTrend.length){
+    html += sparkTrendCardHTML('Body Fat %', bfTrend, 'bodyFatPct', '%', getWeeklyBodyFatChange(), 'var(--brass)');
+  }
+  const fatMassTrend = getFatMassTrend();
+  if(fatMassTrend.length){
+    html += sparkTrendCardHTML('Fat Mass', fatMassTrend, 'fatMass', ' lb', getWeeklyFatMassChange(), 'var(--accent)');
   }
 
   if(nutritionLogs.length){
