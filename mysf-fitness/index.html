@@ -179,13 +179,18 @@ main{flex:1;padding:0 18px;}
 .prog-row{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 14px;margin-bottom:8px;}
 
 /* ---------- Program editor ---------- */
-.prog-row-edit{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px 10px 14px;margin-bottom:8px;display:flex;align-items:center;gap:10px;}
+.prog-row-edit{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:10px 12px 10px 14px;margin-bottom:8px;display:flex;align-items:center;gap:10px;transition:transform .15s var(--ease), box-shadow .15s var(--ease);}
+.prog-row-edit.dragging{position:relative;z-index:5;box-shadow:0 10px 24px rgba(0,0,0,0.4);background:var(--surface-hi);transition:none;}
+.prog-drag-handle{display:flex;align-items:center;justify-content:center;width:26px;height:44px;flex-shrink:0;color:var(--text-faint);cursor:grab;touch-action:none;-webkit-user-select:none;user-select:none;}
+.prog-drag-handle:active{cursor:grabbing;color:var(--accent);}
+.prog-row-edit.dragging .prog-drag-handle{color:var(--accent);}
+.prog-drag-handle svg{width:15px;height:15px;pointer-events:none;}
 .prog-reorder{display:flex;flex-direction:column;gap:2px;flex-shrink:0;}
 .reorder-btn{background:none;border:none;color:var(--text-faint);cursor:pointer;padding:7px;min-width:28px;min-height:28px;display:flex;align-items:center;justify-content:center;transition:transform .15s var(--ease);}
 .reorder-btn:active{transform:scale(0.85);color:var(--accent);}
 .reorder-btn svg{width:14px;height:14px;}
 .prog-row-info{flex:1;min-width:0;}
-.prog-target-input{width:100%;background:none;border:none;color:var(--text-dim);font-family:'JetBrains Mono',monospace;font-size:11px;padding:2px 0;margin-top:2px;}
+.prog-target-input{width:100%;background:none;border:none;color:var(--text-dim);font-family:'JetBrains Mono',monospace;font-size:16px;padding:2px 0;margin-top:2px;}
 .prog-target-input:focus{color:var(--accent);outline:none;}
 .add-exercise-btn{width:100%;background:var(--surface-alt);border:1px dashed var(--border);color:var(--accent);font-family:'JetBrains Mono',monospace;font-size:12px;font-weight:600;border-radius:10px;padding:11px;cursor:pointer;margin-bottom:16px;text-align:center;transition:transform .15s var(--ease);}
 .add-exercise-btn:active{transform:scale(0.98);background:var(--surface-hi);}
@@ -298,7 +303,7 @@ main{flex:1;padding:0 18px;}
 .bw-fatmass b{color:var(--text);font-weight:700;}
 
 /* ---------- TDEE calculator ---------- */
-.tdee-select{width:100%;background:var(--surface-alt);border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--text);font-family:'Inter',sans-serif;font-size:14px;box-sizing:border-box;}
+.tdee-select{width:100%;background:var(--surface-alt);border:1px solid var(--border);border-radius:8px;padding:10px;color:var(--text);font-family:'Inter',sans-serif;font-size:16px;box-sizing:border-box;}
 .tdee-result{margin-top:16px;padding-top:14px;border-top:1px solid var(--border);}
 .tdee-target-row{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 0;border-top:1px solid var(--border);}
 .tdee-target-label{font-size:12px;color:var(--text-dim);}
@@ -706,8 +711,7 @@ let state = {
   confirmDelete: null,
   exportFormat: 'csv',
   fuelExportFormat: 'csv',
-  showCustomForm: false,
-  builder: { open:false, search:'', name:'', items:[], showCustomItem:false, saveAsMeal:false },
+  builder: { search:'', name:'', items:[], showCustomItem:false, saveAsMeal:false },
   exerciseBrowser: { open:false, day:null, muscle:'all', search:'', showCustom:false },
   pendingRestore: null,
   editingSetId: null,
@@ -716,6 +720,68 @@ let state = {
   tdeeCalc: { weight:'', activity:'1.2', result:null },
 };
 
+// The exact previous default program, kept only so the migration below can
+// tell "still the untouched old default" apart from "someone customized
+// this" — never read or written anywhere else.
+const OLD_PROGRAM_DEFAULT_V1 = [
+  {day:"Day 1 - Upper A", name:"Incline DB Press", target:"4 x 6-10", baseline:"140 x 8 x 4"},
+  {day:"Day 1 - Upper A", name:"Chest-Supported Row", target:"4 x 6-10", baseline:"100 x 8 x 4"},
+  {day:"Day 1 - Upper A", name:"Flat Bench Press", target:"3 x 3-6", baseline:"205x5, 205x5, 185x6"},
+  {day:"Day 1 - Upper A", name:"Lat Pulldown", target:"3-4 x 6-10", baseline:"115x10, 115x10, 130x8, 145x6"},
+  {day:"Day 1 - Upper A", name:"Arsenal Shoulder Press", target:"3 x 6-10", baseline:"New - establish baseline"},
+  {day:"Day 1 - Upper A", name:"DB Lateral Raise", target:"2 x 12-20", baseline:"New - establish baseline"},
+  {day:"Day 1 - Upper A", name:"Preacher Curl (EZ Bar)", target:"3 x 15-20", baseline:"50 lb EZ bar - new rep range"},
+  {day:"Day 1 - Upper A", name:"Rope Pushdowns", target:"2 x 12-20", baseline:"80 x 15 x 3"},
+
+  {day:"Day 2 - Lower A", name:"Leg Press", target:"4 x 6-10", baseline:"New - establish baseline"},
+  {day:"Day 2 - Lower A", name:"Leg Extension", target:"3 x 10-15", baseline:"New - establish baseline"},
+  {day:"Day 2 - Lower A", name:"Leg Curl", target:"3 x 10-15", baseline:"New - establish baseline"},
+  {day:"Day 2 - Lower A", name:"Calf Press", target:"4 x 10-15", baseline:"New - establish baseline"},
+  {day:"Day 2 - Lower A", name:"Cable Curl", target:"3 x 12-20", baseline:"New - establish baseline"},
+  {day:"Day 2 - Lower A", name:"Overhead Cable Triceps Extension", target:"3 x 12-20", baseline:"New - establish baseline"},
+
+  {day:"Day 3 - Upper B", name:"Incline Leverage Chest Press", target:"4 x 8-12", baseline:"140 x 10 x 4"},
+  {day:"Day 3 - Upper B", name:"Cable Row", target:"3 x 8-12", baseline:"115 x 8 x 3"},
+  {day:"Day 3 - Upper B", name:"Arsenal Lateral Raise Machine", target:"3-4 x 10-15", baseline:"New - establish baseline"},
+  {day:"Day 3 - Upper B", name:"Rear-Delt Raise / Reverse Pec Deck", target:"3 x 12-20", baseline:"New - establish baseline"},
+  {day:"Day 3 - Upper B", name:"EZ-Bar Skull Crushers", target:"3 x 8-12", baseline:"60 x 12 x 3"},
+  {day:"Day 3 - Upper B", name:"Incline DB Curl", target:"3 x 8-12", baseline:"New - establish baseline"},
+  {day:"Day 3 - Upper B", name:"DB Hammer Curl", target:"3 x 8-12", baseline:"45 x 10 x 3"},
+
+  {day:"Day 4 - Lower B", name:"Trap-Bar Deadlift", target:"3 x 6-10", baseline:"New - establish baseline"},
+  {day:"Day 4 - Lower B", name:"Bulgarian Split Squat", target:"3 x 10-15", baseline:"New - establish baseline"},
+  {day:"Day 4 - Lower B", name:"Leg Curl (Seated)", target:"3 x 10-15", baseline:"New - establish baseline"},
+  {day:"Day 4 - Lower B", name:"Calf Press (alt angle)", target:"4 x 10-15", baseline:"New - establish baseline"},
+  {day:"Day 4 - Lower B", name:"Standing DB Curl", target:"3 x 12-20", baseline:"New - establish baseline"},
+  {day:"Day 4 - Lower B", name:"Single-Arm DB Overhead Extension", target:"3 x 12-20", baseline:"New - establish baseline"},
+];
+
+// One-time migration to the new default program (33-exercise 4-day split).
+// Anyone who already has a saved mysf-program from before this update would
+// otherwise keep seeing their old program forever, since loadProgram() below
+// always prefers whatever's in localStorage over the built-in default. This
+// forces the new default in — but ONLY when there's nothing to lose: either
+// the key doesn't exist yet, or what's stored is byte-for-byte the untouched
+// old default. If it's anything else, someone customized their program, and
+// this leaves it alone entirely, no matter what it is.
+// Gated by mysf-program-migrated-v2 either way, so the check (and the small
+// risk of a false-positive "customized" read on a future format change)
+// only ever happens once, and post-migration edits always persist normally.
+// Touches only mysf-program and its own flag key — nothing else.
+let programMigrationApplied = false;
+function migrateProgramV2(){
+  try{
+    if(localStorage.getItem('mysf-program-migrated-v2')) return;
+    const raw = localStorage.getItem('mysf-program');
+    const isUnset = raw === null;
+    const isUntouchedOldDefault = raw === JSON.stringify(OLD_PROGRAM_DEFAULT_V1);
+    if(isUnset || isUntouchedOldDefault){
+      localStorage.setItem('mysf-program', JSON.stringify(PROGRAM));
+      programMigrationApplied = true;
+    }
+    localStorage.setItem('mysf-program-migrated-v2', '1');
+  }catch(e){ console.error('program migration failed', e); }
+}
 async function loadProgram(){
   try{
     const raw = localStorage.getItem('mysf-program');
@@ -1756,9 +1822,14 @@ function renderProgram(){
     html += `<div class="prog-day-title">${day}</div>`;
     const dayExercises = PROGRAM.filter(p=>p.day===day);
     dayExercises.forEach((ex, idx)=>{
-      const key = day + '|' + ex.name;
+      // Was interpolated into these data-* attributes unescaped even though
+      // the visible name right below it was already escaped — a custom
+      // exercise name with a literal " in it could break out of the
+      // attribute. Fixed here rather than just the display text.
+      const key = esc(day) + '|' + esc(ex.name);
       const isFirst = idx===0, isLast = idx===dayExercises.length-1;
-      html += `<div class="prog-row-edit">
+      html += `<div class="prog-row-edit" data-day="${esc(day)}">
+        <div class="prog-drag-handle" aria-label="Drag to reorder" data-dragkey="${key}"><svg viewBox="0 0 24 24" fill="currentColor"><circle cx="8" cy="6" r="1.6"/><circle cx="16" cy="6" r="1.6"/><circle cx="8" cy="12" r="1.6"/><circle cx="16" cy="12" r="1.6"/><circle cx="8" cy="18" r="1.6"/><circle cx="16" cy="18" r="1.6"/></svg></div>
         <div class="prog-reorder">
           <button class="reorder-btn" aria-label="Move up" data-moveup="${key}" ${isFirst?'style="visibility:hidden;"':''}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="18 15 12 9 6 15"/></svg></button>
           <button class="reorder-btn" aria-label="Move down" data-movedown="${key}" ${isLast?'style="visibility:hidden;"':''}><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg></button>
@@ -1779,6 +1850,7 @@ function renderProgram(){
   document.getElementById('mainView').innerHTML = html;
   if(state.exerciseBrowser.open) renderExerciseBrowser();
   attachProgramEvents();
+  attachDragReorder();
   attachBackupEvents();
 }
 
@@ -1794,6 +1866,92 @@ function moveExercise(day, name, direction){
   PROGRAM[idxA] = PROGRAM[idxB];
   PROGRAM[idxB] = tmp;
   saveProgram();
+}
+
+// Moves the exercise at `fromIndex` within `day`'s list to `toIndex`, using
+// each entry's actual index in the full PROGRAM array (same approach as
+// moveExercise above) rather than assuming a day's exercises sit in one
+// contiguous block — so this stays correct regardless of how PROGRAM is
+// ordered underneath.
+function reorderProgramDay(day, fromIndex, toIndex){
+  if(fromIndex === toIndex) return;
+  const dayIndices = [];
+  PROGRAM.forEach((p,i)=>{ if(p.day===day) dayIndices.push(i); });
+  const dayEntries = dayIndices.map(i=>PROGRAM[i]);
+  if(fromIndex < 0 || fromIndex >= dayEntries.length || toIndex < 0 || toIndex >= dayEntries.length) return;
+  const [moved] = dayEntries.splice(fromIndex, 1);
+  dayEntries.splice(toIndex, 0, moved);
+  dayIndices.forEach((progIdx, k)=>{ PROGRAM[progIdx] = dayEntries[k]; });
+  saveProgram();
+}
+
+// Touch/mouse/pen drag-to-reorder for the program editor, via Pointer Events
+// so one implementation covers all input types. Reordering only ever
+// happens within a single day's list (matching the up/down buttons) — a
+// row is never dragged across a day boundary. The up/down buttons stay in
+// place alongside this as the precise/accessible way to reorder for anyone
+// who can't or doesn't want to drag.
+let dragState = null;
+function attachDragReorder(){
+  document.querySelectorAll('.prog-drag-handle').forEach(handle=>{
+    handle.addEventListener('pointerdown', (e)=>{
+      const row = handle.closest('.prog-row-edit');
+      if(!row) return;
+      const day = row.dataset.day;
+      const rows = Array.from(row.parentElement.querySelectorAll(`.prog-row-edit[data-day="${CSS.escape(day)}"]`));
+      const startIndex = rows.indexOf(row);
+      if(startIndex === -1) return;
+      const rowHeight = row.offsetHeight + parseFloat(getComputedStyle(row).marginBottom || '0');
+      dragState = { day, rows, row, startIndex, currentIndex: startIndex, startY: e.clientY, rowHeight };
+      row.classList.add('dragging');
+      haptic(10);
+      document.addEventListener('pointermove', onDragPointerMove);
+      document.addEventListener('pointerup', onDragPointerEnd);
+      document.addEventListener('pointercancel', onDragPointerEnd);
+      e.preventDefault();
+    });
+  });
+}
+function onDragPointerMove(e){
+  if(!dragState) return;
+  e.preventDefault();
+  const { row, rows, rowHeight, startY, startIndex } = dragState;
+  const deltaY = e.clientY - startY;
+  row.style.transform = `translateY(${deltaY}px)`;
+
+  const rawIndex = startIndex + Math.round(deltaY / rowHeight);
+  const newIndex = Math.max(0, Math.min(rows.length - 1, rawIndex));
+
+  // Recomputed from scratch against the fixed startIndex on every move,
+  // rather than incrementally — keeps this idempotent so rapid back-and-forth
+  // dragging can't leave a sibling's shift out of sync with reality.
+  rows.forEach((r, i)=>{
+    if(r === row) return;
+    let shift = 0;
+    if(newIndex > startIndex && i > startIndex && i <= newIndex) shift = -1;
+    else if(newIndex < startIndex && i < startIndex && i >= newIndex) shift = 1;
+    r.style.transform = shift ? `translateY(${shift * rowHeight}px)` : '';
+  });
+
+  if(newIndex !== dragState.currentIndex){
+    haptic(5);
+    dragState.currentIndex = newIndex;
+  }
+}
+function onDragPointerEnd(){
+  if(!dragState) return;
+  const { day, row, rows, startIndex, currentIndex } = dragState;
+  document.removeEventListener('pointermove', onDragPointerMove);
+  document.removeEventListener('pointerup', onDragPointerEnd);
+  document.removeEventListener('pointercancel', onDragPointerEnd);
+  row.classList.remove('dragging');
+  rows.forEach(r=>{ r.style.transform = ''; });
+  dragState = null;
+  if(startIndex !== currentIndex){
+    reorderProgramDay(day, startIndex, currentIndex);
+    haptic(15);
+    renderProgram();
+  }
 }
 
 function attachProgramEvents(){
@@ -2385,6 +2543,26 @@ function updateBuilderTotalDisplay(){
   if(macroEl) macroEl.textContent = total.protein.toFixed(1)+'g P \u00b7 '+total.fat.toFixed(1)+'g F \u00b7 '+total.carb.toFixed(1)+'g C';
 }
 
+// Shared row renderer for the "tap to add" food search results — reused
+// across Frequent, FOOD_DB, and USDA/Open Food Facts (My Foods and the
+// exercise-browser results are shaped differently enough — extra action
+// buttons, different fields entirely — that forcing them through this same
+// helper would need more special-casing than it'd save).
+// `macroParts` are joined with " · " and escaped as a whole, so any part
+// built from external data (a unit string, an OFF serving label) can never
+// break out of the attribute/markup — same as `name`.
+function foodResultRowHTML(name, macroParts, cals, attrsHTML){
+  return `<div class="food-result" ${attrsHTML}>
+    <div>
+      <div class="food-result-name">${esc(name)}</div>
+      <div class="food-result-macros">${esc(macroParts.join(' · '))}</div>
+    </div>
+    <div class="food-result-cals">${esc(String(cals))}</div>
+  </div>`;
+}
+function foodDbRowHTML(f){
+  return foodResultRowHTML(f.name, ['per '+f.unit, f.protein+'g P', f.fat+'g F', f.carb+'g C'], f.cals, `data-foodname="${esc(f.name)}"`);
+}
 function itemRowHTML(item){
   const m = computeItemMacros(item);
   return `<div class="builder-item">
@@ -2532,22 +2710,10 @@ function renderFoodResults(){
     }
     if(frequent.length){
       html += `<div class="section-label" style="margin:10px 0 8px;">Frequent</div>`;
-      html += frequent.map(f=>`<div class="food-result" data-freqname="${esc(f.name)}">
-        <div>
-          <div class="food-result-name">${esc(f.name)}</div>
-          <div class="food-result-macros">per ${f.unit} &middot; logged ${f.count}x</div>
-        </div>
-        <div class="food-result-cals">${Math.round(f.baseCals)}</div>
-      </div>`).join('');
+      html += frequent.map(f=>foodResultRowHTML(f.name, ['per '+f.unit, 'logged '+f.count+'x'], Math.round(f.baseCals), `data-freqname="${esc(f.name)}"`)).join('');
     }
     html += `<div class="section-label" style="margin:10px 0 8px;">All Foods</div>`;
-    html += FOOD_DB.slice(0,8).map(f=>`<div class="food-result" data-foodname="${esc(f.name)}">
-      <div>
-        <div class="food-result-name">${esc(f.name)}</div>
-        <div class="food-result-macros">per ${f.unit} &middot; ${f.protein}g P &middot; ${f.fat}g F &middot; ${f.carb}g C</div>
-      </div>
-      <div class="food-result-cals">${f.cals}</div>
-    </div>`).join('');
+    html += FOOD_DB.slice(0,8).map(foodDbRowHTML).join('');
     container.innerHTML = html;
     container.querySelectorAll('[data-freqname]').forEach(row=>{
       row.addEventListener('click', ()=>{
@@ -2565,13 +2731,7 @@ function renderFoodResults(){
       html += `<div class="section-label" style="margin:2px 0 8px;">My Foods</div>`;
       html += myMatches.map(myFoodRowHTML).join('');
     }
-    html += matches.map(f=>`<div class="food-result" data-foodname="${esc(f.name)}">
-      <div>
-        <div class="food-result-name">${esc(f.name)}</div>
-        <div class="food-result-macros">per ${f.unit} &middot; ${f.protein}g P &middot; ${f.fat}g F &middot; ${f.carb}g C</div>
-      </div>
-      <div class="food-result-cals">${f.cals}</div>
-    </div>`).join('');
+    html += matches.map(foodDbRowHTML).join('');
     container.innerHTML = html;
     container.innerHTML += `<div class="db-status" id="dbStatusUSDA">Searching USDA\u2026</div><div class="db-status" id="dbStatusOFF">Searching Open Food Facts\u2026</div>`;
 
@@ -2635,14 +2795,16 @@ function renderDbSection(statusId, label, results, hadLocalMatches){
   dbResultsCache[statusId] = results;
   statusEl.outerHTML = `<div class="section-label" style="margin:10px 0 8px;">${label}</div>` +
     results.map((f,i)=>{
+      // f.serving.label (USDA's householdServingFullText, or Open Food
+      // Facts' crowd-editable serving_size field) is external data, same
+      // category as f.name \u2014 foodResultRowHTML escapes the whole joined
+      // macros line, so this is covered the same way name already is.
       const servingNote = f.serving ? `${f.serving.label} \u2014 ${f.serving.cals} cal` : `per ${f.unit} \u2014 ${f.cals} cal`;
-      return `<div class="food-result" data-dbsrc="${statusId}" data-dbidx="${i}">
-        <div>
-          <div class="food-result-name">${esc(f.name)}</div>
-          <div class="food-result-macros">${servingNote} &middot; ${f.serving ? f.serving.protein : f.protein}g P &middot; ${f.serving ? f.serving.fat : f.fat}g F &middot; ${f.serving ? f.serving.carb : f.carb}g C</div>
-        </div>
-        <div class="food-result-cals">${f.serving ? f.serving.cals : f.cals}</div>
-      </div>`;
+      const protein = f.serving ? f.serving.protein : f.protein;
+      const fat = f.serving ? f.serving.fat : f.fat;
+      const carb = f.serving ? f.serving.carb : f.carb;
+      const cals = f.serving ? f.serving.cals : f.cals;
+      return foodResultRowHTML(f.name, [servingNote, protein+'g P', fat+'g F', carb+'g C'], cals, `data-dbsrc="${statusId}" data-dbidx="${i}"`);
     }).join('');
   document.querySelectorAll(`[data-dbsrc="${statusId}"]`).forEach(row=>{
     row.addEventListener('click', async ()=>{
@@ -2756,7 +2918,7 @@ function renderBuilderPanel(){
 
   document.getElementById('builderCancel').addEventListener('click', ()=>{
     haptic(8);
-    state.builder = { open:true, search:'', name:'', items:[], showCustomItem:false, saveAsMeal:false };
+    state.builder = { search:'', name:'', items:[], showCustomItem:false, saveAsMeal:false };
     clearBuilderDraft();
     renderBuilderPanel();
   });
@@ -2780,7 +2942,7 @@ function renderBuilderPanel(){
       });
       await saveSavedMeals();
     }
-    state.builder = { open:false, search:'', name:'', items:[], showCustomItem:false, saveAsMeal:false };
+    state.builder = { search:'', name:'', items:[], showCustomItem:false, saveAsMeal:false };
     clearBuilderDraft();
     logNutritionEntry(entry);
   });
@@ -3012,16 +3174,22 @@ function renderFuelTrends(){
   }
   let html = '';
 
+  // Each metric is sorted once here and reused for both the sparkline slice
+  // and the weekly-change calc, rather than going through the getX()/
+  // getWeeklyXChange() getters (each getter is still used elsewhere on its
+  // own, where only one of the two is needed — this redundancy was specific
+  // to rendering both together).
   if(bodyweightLogs.length){
-    html += sparkTrendCardHTML('Bodyweight', getBodyweightTrend(), 'weight', ' lb', getWeeklyWeightChange(), 'var(--macro-carb)');
+    const weightSorted = [...bodyweightLogs].sort((a,b)=> a.date < b.date ? -1 : 1);
+    html += sparkTrendCardHTML('Bodyweight', weightSorted.slice(-10), 'weight', ' lb', computeWeeklyChange(weightSorted, 'weight'), 'var(--macro-carb)');
   }
-  const bfTrend = getBodyFatTrend();
-  if(bfTrend.length){
-    html += sparkTrendCardHTML('Body Fat %', bfTrend, 'bodyFatPct', '%', getWeeklyBodyFatChange(), 'var(--brass)');
+  const bfSorted = getBodyFatSorted();
+  if(bfSorted.length){
+    html += sparkTrendCardHTML('Body Fat %', bfSorted.slice(-10), 'bodyFatPct', '%', computeWeeklyChange(bfSorted, 'bodyFatPct'), 'var(--brass)');
   }
-  const fatMassTrend = getFatMassTrend();
-  if(fatMassTrend.length){
-    html += sparkTrendCardHTML('Fat Mass', fatMassTrend, 'fatMass', ' lb', getWeeklyFatMassChange(), 'var(--accent)');
+  const fatMassSorted = getFatMassSorted();
+  if(fatMassSorted.length){
+    html += sparkTrendCardHTML('Fat Mass', fatMassSorted.slice(-10), 'fatMass', ' lb', computeWeeklyChange(fatMassSorted, 'fatMass'), 'var(--accent)');
   }
 
   if(nutritionLogs.length){
@@ -3274,8 +3442,7 @@ document.querySelectorAll('.mode-btn').forEach(b=>{
     state.mode = b.dataset.mode;
     state.view = 'today';
     state.confirmDelete = null;
-    state.showCustomForm = false;
-    state.builder = { open:false, search:'', name:'', items:[], showCustomItem:false, saveAsMeal:false };
+    state.builder = { search:'', name:'', items:[], showCustomItem:false, saveAsMeal:false };
     render();
   });
 });
@@ -3301,11 +3468,18 @@ renderSkeleton();
 updateClock();
 setInterval(updateClock, 30000);
 loadBarcodeCache();
+migrateProgramV2();
 Promise.all([loadLogs(), loadNutrition(), loadApiKey(), loadSessions(), loadProgram(), loadNutritionTarget(), loadBodyweight(), loadSavedMeals(), loadCustomFoods(), loadTdeeProfile(), loadBuilderDraft()]).then(()=>{
   state.selectedDay = suggestNextDay();
   updateCorruptWarning();
   render();
-  if(recoveredBuilderDraft) showToast('Recovered an unfinished meal — pick up where you left off');
+  // Combined rather than two separate calls — showToast() has no queue, so
+  // a second call on the same load would silently overwrite the first
+  // before it's ever seen.
+  const loadToasts = [];
+  if(programMigrationApplied) loadToasts.push('Program updated to a new default');
+  if(recoveredBuilderDraft) loadToasts.push('Recovered an unfinished meal — pick up where you left off');
+  if(loadToasts.length) showToast(loadToasts.join(' · '));
   checkFreshInstall();
 });
 
